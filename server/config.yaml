@@ -1,0 +1,6 @@
+API:
+  enableAPI: true
+  port: 9999
+CacheServer:
+  - name: "score"
+
