@@ -1,4 +1,4 @@
-package peer
+package server
 
 import (
 	"bytes"
@@ -9,20 +9,77 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
 type HTTPPool struct {
-	picker HTTPPicker
+	HTTPPicker
 }
 
-func (H *HTTPPool) SetPicker(picker Picker) {
-	//TODO implement me
-	panic("implement me")
+func (H *HTTPPool) ServerHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		H.GetHandler(w, r)
+	case http.MethodDelete:
+		H.DeleteHandler(w, r)
+	case http.MethodPost:
+		H.PostHandler(w, r)
+	default:
+		w.WriteHeader(http.StatusNotImplemented)
+	}
+}
+
+func (H *HTTPPool) GetHandler(w http.ResponseWriter, r *http.Request) {
+	paths := strings.SplitN(r.URL.Path, "/", 2)
+	namespace, key := paths[0], paths[1]
+	cache := GetCache(namespace)
+	value, err := cache.Get(key)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	body, err := proto.Marshal(&pb.GetResponse{Value: value.Slice()})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write(body)
+	w.WriteHeader(http.StatusOK)
+}
+
+func (H *HTTPPool) DeleteHandler(w http.ResponseWriter, r *http.Request) {
+	paths := strings.SplitN(r.URL.Path, "/", 2)
+	namespace, key := paths[0], paths[1]
+	cache := GetCache(namespace)
+	if err := cache.Remove(key); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (H *HTTPPool) PostHandler(w http.ResponseWriter, r *http.Request) {
+	paths := strings.SplitN(r.URL.Path, "/", 1)
+	namespace := paths[0]
+	cache := GetCache(namespace)
+	body, err := io.ReadAll(r.Body)
+	req := &pb.SetRequest{}
+	if err = proto.Unmarshal(body, req); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	cache.Set(req.Key, req.Value, time.Duration(req.Expire))
+	w.WriteHeader(http.StatusOK)
 }
 
 func (H *HTTPPool) StartPeerServer(addr string, peerAddr ...string) {
-
+	var getters = make([]Getter, len(peerAddr))
+	for i := range peerAddr {
+		getters = append(getters, NewHTTPGetter(peerAddr[i], peerAddr[i]))
+	}
+	H.AddGetters(getters...)
+	panic(http.ListenAndServe(addr, nil))
 }
 
 /* HTTPPicker */
@@ -132,7 +189,7 @@ func (H HTTPGetter) Remove(namespace string, key string) error {
 }
 
 func (H HTTPGetter) Set(namespace string, key string, value []byte, expire time.Duration) error {
-	u, err := url.JoinPath(H.baseURl, url.QueryEscape(namespace), url.QueryEscape(key))
+	u, err := url.JoinPath(H.baseURl, url.QueryEscape(namespace))
 	if err != nil {
 		return fmt.Errorf("failed to splicing url, err: %v", err)
 	}
@@ -177,6 +234,9 @@ func Request(method string, url string, body io.Reader) (resp *http.Response, er
 	resp, err = client.Do(req)
 	if err != nil {
 		return resp, fmt.Errorf("failed to sent request, err: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return resp, fmt.Errorf("faield to send request, status: %s", resp.Status)
 	}
 	return
 }

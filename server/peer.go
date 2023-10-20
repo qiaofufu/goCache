@@ -1,10 +1,10 @@
-package peer
+package server
 
 import "time"
 
 type Peer interface {
-	SetPicker(picker Picker)                         // 设置Picker
 	StartPeerServer(addr string, peerAddr ...string) // 启动服务
+	Picker
 }
 
 type Picker interface {
@@ -21,5 +21,5 @@ type Getter interface {
 	Set(namespace string, key string, value []byte, expire time.Duration) error // 设置数据
 	Remove(namespace string, key string) error                                  // 根据namespace 和 key 删除数据
 	Addr() string                                                               // 获取getter Addr
-	Name() string
+	Name() string                                                               // 获取getter Name
 }

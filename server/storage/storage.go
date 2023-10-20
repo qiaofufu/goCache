@@ -7,12 +7,18 @@ type Storage interface {
 	Set(key string, value Value, expire time.Duration) // 设置缓存
 	Delete(key string) (value Value, ok bool)          // 删除缓存
 	RemoveOldest()                                     // 淘汰缓存
-	SetOnEvicted(onEvicted OnEvictedFunc)              // 设置缓存淘汰的回调函数
 	Len() int                                          // 获取缓存记录数量
+}
+
+type entry struct {
+	key    string
+	value  Value
+	expire int64 // UnixMilli
 }
 
 type Value interface {
 	Size() int
+	String() string
 }
 
 type OnEvictedFunc func(key string, value Value)
