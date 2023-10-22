@@ -67,7 +67,7 @@ func (L *LRU) Set(key string, value Value, expire time.Duration) {
 		L.len++
 	}
 
-	for L.usedBytes > L.maxBytes {
+	for L.maxBytes != 0 && L.usedBytes > L.maxBytes {
 		L.RemoveOldest()
 	}
 }

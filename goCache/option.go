@@ -1,9 +1,10 @@
-package option
+package goCache
 
 import "goCache/goCache/cache"
 
 type CacheOption struct {
-	Strategy cache.Cache
+	mainCache cache.Cache
+	hotCache  cache.Cache
 }
 
 type CacheOptionFunc func(option *CacheOption)
@@ -12,13 +13,15 @@ func WithCacheOptionsStrategy(Strategy string, maxBytes int64, evictedFunc cache
 	return func(option *CacheOption) {
 		switch Strategy {
 		case "lru":
-			option.Strategy = cache.NewLRU(maxBytes, evictedFunc)
+			option.mainCache = cache.NewLRU(maxBytes, evictedFunc)
+			option.hotCache = cache.NewLRU(maxBytes/8, evictedFunc)
 		default:
-			option.Strategy = cache.NewLRU(maxBytes, evictedFunc)
+			option.mainCache = cache.NewLRU(maxBytes, evictedFunc)
+			option.hotCache = cache.NewLRU(maxBytes/8, evictedFunc)
 		}
 	}
 }
 
 func DefaultCacheOption() CacheOption {
-	return CacheOption{Strategy: cache.NewLRU(0, nil)}
+	return CacheOption{mainCache: cache.NewLRU(0, nil)}
 }
