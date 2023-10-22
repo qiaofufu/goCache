@@ -15,10 +15,10 @@ const (
 type HashFunc func(data []byte) uint32
 
 type Node struct {
-	Name   string
-	Val    int
-	Addr   string
-	Weight int
+	val    int    // val 节点hash值
+	Name   string // Name 节点名称
+	Addr   string // Addr 节点地址
+	Weight int    // Weight 节点权重
 }
 
 type Consistent struct {
@@ -59,7 +59,7 @@ func (c *Consistent) adjust() {
 			hashVal := c.hash([]byte(fmt.Sprintf("%s:%d", k, i)))
 			n := Node{
 				Name:   k,
-				Val:    int(hashVal),
+				val:    int(hashVal),
 				Addr:   node.Addr,
 				Weight: node.Weight,
 			}
@@ -68,7 +68,7 @@ func (c *Consistent) adjust() {
 	}
 
 	sort.Slice(c.ring, func(i, j int) bool {
-		return c.ring[i].Val < c.ring[j].Val
+		return c.ring[i].val < c.ring[j].val
 	})
 }
 
@@ -81,31 +81,21 @@ func (c *Consistent) AddNodes(nodes ...Node) {
 	c.adjust()
 }
 
-func (c *Consistent) AddNode(node Node) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.mp[node.Name] = node
-	c.adjust()
-}
-
-func (c *Consistent) Remove(nodeKey string) {
-	delete(c.mp, nodeKey)
-}
-
-func (c *Consistent) UpdateNode(node Node) {
-	c.AddNode(node)
-}
-
 func (c *Consistent) GetNode(key string) (Node, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if len(key) == 0 {
 		return Node{}, fmt.Errorf("key cannot be nil")
 	}
+
+	if len(c.ring) == 0 {
+		return Node{}, fmt.Errorf("ring is nil")
+	}
+
 	hashVal := int(c.hash([]byte(key)))
 
 	idx := sort.Search(len(c.ring), func(mid int) bool {
-		return c.ring[mid].Val >= hashVal
+		return c.ring[mid].val >= hashVal
 	})
 
 	return c.ring[idx%len(c.ring)], nil

@@ -1,4 +1,4 @@
-package server
+package goCache
 
 type ByteView struct {
 	b []byte

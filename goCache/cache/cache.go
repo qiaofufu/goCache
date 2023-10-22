@@ -1,8 +1,8 @@
-package storage
+package cache
 
 import "time"
 
-type Storage interface {
+type Cache interface {
 	Get(key string) (value Value, ok bool)             // 获取缓存
 	Set(key string, value Value, expire time.Duration) // 设置缓存
 	Delete(key string) (value Value, ok bool)          // 删除缓存

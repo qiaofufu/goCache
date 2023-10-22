@@ -1,23 +1,53 @@
-package server
+package goCache
 
 import (
 	"bytes"
 	"fmt"
+	"goCache/goCache/consistent"
 	"goCache/pb"
-	"goCache/server/consistent"
 	"google.golang.org/protobuf/proto"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
+
+func NewHTTPPool(self string) *HTTPPool {
+	return &HTTPPool{
+		HTTPPicker: HTTPPicker{
+			self:           self,
+			consistentHash: consistent.New(0, nil),
+		}}
+}
 
 type HTTPPool struct {
 	HTTPPicker
 }
 
-func (H *HTTPPool) ServerHTTP(w http.ResponseWriter, r *http.Request) {
+func (H *HTTPPool) StartService(addr string) {
+	var (
+		done    = make(chan error)
+		success = make(chan struct{})
+	)
+	go func() {
+		done <- http.ListenAndServe(addr, H)
+	}()
+	go func() {
+		http.Get(addr)
+		success <- struct{}{}
+	}()
+	select {
+	case err := <-done:
+		panic(err)
+	case <-success:
+		log.Println("goCache start, addr:", addr)
+	}
+}
+
+func (H *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		H.GetHandler(w, r)
@@ -31,27 +61,37 @@ func (H *HTTPPool) ServerHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (H *HTTPPool) GetHandler(w http.ResponseWriter, r *http.Request) {
-	paths := strings.SplitN(r.URL.Path, "/", 2)
-	namespace, key := paths[0], paths[1]
-	cache := GetCache(namespace)
+	paths := strings.SplitN(r.URL.Path[1:], "/", 2)
+	group, key := paths[0], paths[1]
+	cache, exist := GetGroup(group)
+	if !exist {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	value, err := cache.Get(key)
 	if err != nil {
+		log.Println(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	body, err := proto.Marshal(&pb.GetResponse{Value: value.Slice()})
 	if err != nil {
+		log.Println(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Write(body)
 	w.WriteHeader(http.StatusOK)
+	w.Write(body)
 }
 
 func (H *HTTPPool) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	paths := strings.SplitN(r.URL.Path, "/", 2)
-	namespace, key := paths[0], paths[1]
-	cache := GetCache(namespace)
+	group, key := paths[0], paths[1]
+	cache, exist := GetGroup(group)
+	if !exist {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	if err := cache.Remove(key); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -61,8 +101,12 @@ func (H *HTTPPool) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 func (H *HTTPPool) PostHandler(w http.ResponseWriter, r *http.Request) {
 	paths := strings.SplitN(r.URL.Path, "/", 1)
-	namespace := paths[0]
-	cache := GetCache(namespace)
+	group := paths[0]
+	cache, exist := GetGroup(group)
+	if !exist {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	req := &pb.SetRequest{}
 	if err = proto.Unmarshal(body, req); err != nil {
@@ -73,79 +117,62 @@ func (H *HTTPPool) PostHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (H *HTTPPool) StartPeerServer(addr string, peerAddr ...string) {
-	var getters = make([]Getter, len(peerAddr))
-	for i := range peerAddr {
-		getters = append(getters, NewHTTPGetter(peerAddr[i], peerAddr[i]))
-	}
-	H.AddGetters(getters...)
-	panic(http.ListenAndServe(addr, nil))
-}
-
 /* HTTPPicker */
 
 type HTTPPicker struct {
-	consistentHash consistent.Consistent
-	getters        map[string]Getter
+	self           string // 自身地址
+	mu             sync.RWMutex
+	consistentHash *consistent.Consistent
+	getters        map[string]PeerGetter
 }
 
-func (H *HTTPPicker) PickerPeer(key string) (Getter, error) {
+func (H *HTTPPicker) PickPeer(key string) (PeerGetter, bool) {
+	H.mu.RLock()
+	defer H.mu.RUnlock()
 	node, err := H.consistentHash.GetNode(key)
-	if err != nil {
-		return nil, err
+	if err != nil || node.Addr == H.self {
+		return nil, false
 	}
-	return H.getters[node.Name], nil
+	log.Println(H.self, node.Addr)
+	return H.getters[node.Name], true
 }
 
-func (H *HTTPPicker) AddGetter(getter Getter) {
-	H.getters[getter.Name()] = getter
-	H.consistentHash.AddNode(consistent.Node{
-		Name:   getter.Name(),
-		Addr:   getter.Addr(),
-		Weight: 1,
-	})
-}
-
-func (H *HTTPPicker) AddGetters(getters ...Getter) {
-	nodes := make([]consistent.Node, 0, len(getters))
+func (H *HTTPPicker) SetPeerGetter(getters ...PeerGetter) {
+	H.mu.Lock()
+	defer H.mu.Unlock()
+	// 一致性hash节点添加
+	var nodes = make([]consistent.Node, 0, len(getters))
 	for _, getter := range getters {
 		nodes = append(nodes, consistent.Node{
 			Name:   getter.Name(),
 			Addr:   getter.Addr(),
-			Weight: 1,
+			Weight: getter.Weight(),
 		})
+	}
+	H.consistentHash = consistent.New(0, nil)
+	H.consistentHash.AddNodes(nodes...)
+
+	// PeerGetter 添加
+	H.getters = make(map[string]PeerGetter)
+	for _, getter := range getters {
 		H.getters[getter.Name()] = getter
 	}
-
-	H.consistentHash.AddNodes(nodes...)
-}
-
-func (H *HTTPPicker) UpdateGetter(getter Getter) {
-	H.getters[getter.Name()] = getter
-	H.consistentHash.UpdateNode(consistent.Node{
-		Name:   getter.Name(),
-		Addr:   getter.Addr(),
-		Weight: 1,
-	})
-}
-
-func (H *HTTPPicker) RemoveGetter(name string) {
-	delete(H.getters, name)
-	H.consistentHash.Remove(name)
 }
 
 /* HTTP Getter */
 
+func NewHTTPGetter(serverName string, addr string, weight int) *HTTPGetter {
+	return &HTTPGetter{
+		name:    serverName,
+		baseURl: addr,
+		weight:  weight,
+	}
+}
+
 type HTTPGetter struct {
 	name    string
 	baseURl string
-}
-
-func NewHTTPGetter(name string, addr string) *HTTPGetter {
-	return &HTTPGetter{
-		name:    name,
-		baseURl: addr,
-	}
+	weight  int
 }
 
 func (H HTTPGetter) Addr() string {
@@ -156,8 +183,12 @@ func (H HTTPGetter) Name() string {
 	return H.name
 }
 
-func (H HTTPGetter) Get(namespace string, key string) ([]byte, error) {
-	u, err := url.JoinPath(H.baseURl, url.QueryEscape(namespace), url.QueryEscape(key))
+func (H HTTPGetter) Weight() int {
+	return H.weight
+}
+
+func (H HTTPGetter) Get(group string, key string) ([]byte, error) {
+	u, err := url.JoinPath(H.baseURl, url.QueryEscape(group), url.QueryEscape(key))
 	if err != nil {
 		return nil, fmt.Errorf("failed to splicing url, err: %v", err)
 	}
