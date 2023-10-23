@@ -101,12 +101,15 @@ func (c *Group) removeFromPeer(key string) error {
 func (c *Group) lookupCache(key string) (ByteView, bool) {
 	v, ok := c.mainCache.Get(key)
 	if ok {
+		log.Printf("[%s] lookup cache, mainCache hit\n", c.name)
 		return v.(ByteView), ok
 	}
 	v, ok = c.hotCache.Get(key)
 	if !ok {
+
 		return ByteView{}, false
 	}
+	log.Printf("[%s] lookup cache, hotCache hit\n", c.name)
 	return v.(ByteView), ok
 }
 
@@ -118,7 +121,7 @@ func (c *Group) load(key string) (ByteView, error) {
 		}
 		return c.loadLocally(key)
 	})
-	c.Set(key, value.(ByteView).Slice(), defaultExpire)
+
 	return value.(ByteView), err
 }
 
@@ -127,6 +130,7 @@ func (c *Group) loadLocally(key string) (ByteView, error) {
 	if err != nil {
 		return ByteView{}, err
 	}
+	c.Set(key, v, defaultExpire)
 	return ByteView{b: v}, nil
 }
 

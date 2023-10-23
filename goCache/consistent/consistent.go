@@ -18,7 +18,7 @@ type Node struct {
 	val    int    // val 节点hash值
 	Name   string // Name 节点名称
 	Addr   string // Addr 节点地址
-	Weight int    // Weight 节点权重
+	Weight int32  // Weight 节点权重
 }
 
 type Consistent struct {
@@ -45,7 +45,7 @@ func New(replicas int, fn HashFunc) *Consistent {
 }
 
 func (c *Consistent) adjust() {
-	var totalWeight int
+	var totalWeight int32
 	for _, v := range c.mp {
 		totalWeight += v.Weight
 	}
@@ -78,6 +78,20 @@ func (c *Consistent) AddNodes(nodes ...Node) {
 	for _, node := range nodes {
 		c.mp[node.Name] = node
 	}
+	c.adjust()
+}
+
+func (c *Consistent) AddNode(node Node) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.mp[node.Name] = node
+	c.adjust()
+}
+
+func (c *Consistent) DelNode(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.mp, name)
 	c.adjust()
 }
 

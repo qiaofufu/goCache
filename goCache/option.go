@@ -23,5 +23,8 @@ func WithCacheOptionsStrategy(Strategy string, maxBytes int64, evictedFunc cache
 }
 
 func DefaultCacheOption() CacheOption {
-	return CacheOption{mainCache: cache.NewLRU(0, nil)}
+	return CacheOption{
+		mainCache: cache.NewLRU(0, nil),
+		hotCache:  cache.NewLRU(0, nil),
+	}
 }

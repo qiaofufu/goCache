@@ -12,6 +12,7 @@ message GetRequest {
 
 message GetResponse {
   bytes value = 1;
+  string msg = 2;
 }
 
 message SetRequest {

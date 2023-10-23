@@ -8,11 +8,11 @@ import (
 
 func TestHTTPPool(t *testing.T) {
 	var (
-		addr = "http://localhost:8000"
+		etcdAddr = "http://162.14.115.114:2379"
+		addr     = "http://localhost:8000"
 	)
-	pool := NewHTTPPool(addr)
-	pool.SetPeerGetter(NewHTTPGetter("test", addr, 1))
-	pool.StartService(addr[7:])
+	pool := NewHTTPPool(addr, etcdAddr)
+	pool.StartService()
 
 	getUrl, err := url.JoinPath(addr, "test-group", "test-key")
 	if err != nil {
