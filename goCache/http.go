@@ -29,18 +29,28 @@ func NewHTTPPool(addr string, endpoints ...string) *HTTPPool {
 	if err != nil {
 		panic(fmt.Errorf("failed to new etcd client, err: %v", err))
 	}
+	cli2, err := clientv3.New(clientv3.Config{
+		Endpoints: endpoints,
+	})
+	if err != nil {
+		panic(fmt.Errorf("failed to new etcd client, err: %v", err))
+	}
 	return &HTTPPool{
 		self:           addr,
-		cli:            client,
+		weight:         1,
+		registerCli:    client,
+		discoveryCli:   cli2,
 		consistentHash: consistent.New(0, nil),
 		getters:        make(map[string]PeerGetter),
 	}
 }
 
 type HTTPPool struct {
-	cli            *clientv3.Client // 注册中心Client
-	self           string           // 自身地址
-	weight         int32            // 该节点权重
+	registerCli    *clientv3.Client // 注册中心Client
+	discoveryCli   *clientv3.Client
+	leaseRespChan  <-chan *clientv3.LeaseKeepAliveResponse
+	self           string // 自身地址
+	weight         int32  // 该节点权重
 	mu             sync.RWMutex
 	consistentHash *consistent.Consistent // 一致性hash
 	getters        map[string]PeerGetter
@@ -74,17 +84,17 @@ func (H *HTTPPool) StartService() {
 
 func (H *HTTPPool) Register(prefix string, leaseExpire int64) {
 	// 创建租约
-	lease, err := H.cli.Grant(context.TODO(), leaseExpire)
+	lease, err := H.registerCli.Grant(context.TODO(), leaseExpire)
 	if err != nil {
 		panic(fmt.Errorf("failed grant lease, err: %v", err))
 	}
 
 	// 设置租约不过期
-	_, err = H.cli.KeepAlive(context.TODO(), lease.ID)
+	leaseKeepaliveResp, err := H.registerCli.KeepAlive(context.TODO(), lease.ID)
 	if err != nil {
 		panic(err)
 	}
-
+	H.leaseRespChan = leaseKeepaliveResp
 	// 进行注册
 	key := fmt.Sprintf("%s-%d", prefix, lease.ID)
 	value, err := proto.Marshal(&pb.ServiceNode{
@@ -95,16 +105,25 @@ func (H *HTTPPool) Register(prefix string, leaseExpire int64) {
 	if err != nil {
 		panic(fmt.Errorf("failed to marshal ServiceNode, err: %v", err))
 	}
-	_, err = H.cli.Put(context.TODO(), key, string(value), clientv3.WithLease(lease.ID))
+	_, err = H.registerCli.Put(context.TODO(), key, string(value), clientv3.WithLease(lease.ID))
 	if err != nil {
 		panic(fmt.Errorf("register service to etcd failed, err: %v", err))
 	}
+	go H.ListenLeaseResp()
+}
+
+func (H *HTTPPool) ListenLeaseResp() {
+	for _ = range H.leaseRespChan {
+
+		//log.Println("租约续租成功", resp)
+	}
+	log.Println("关闭租约")
 }
 
 func (H *HTTPPool) Discovery(prefix string) {
 
 	// 初始获取服务节点
-	resp, err := H.cli.Get(context.TODO(), prefix, clientv3.WithPrefix())
+	resp, err := H.discoveryCli.Get(context.TODO(), prefix, clientv3.WithPrefix())
 	if err != nil {
 		panic(err)
 	}
@@ -113,7 +132,7 @@ func (H *HTTPPool) Discovery(prefix string) {
 	}
 
 	// 开启监听注册中心
-	go H.watch(H.cli, prefix)
+	go H.watch(H.discoveryCli, prefix)
 }
 
 func (H *HTTPPool) watch(cli *clientv3.Client, prefix string) {
@@ -133,19 +152,21 @@ func (H *HTTPPool) watch(cli *clientv3.Client, prefix string) {
 func (H *HTTPPool) SetService(key string, value string) {
 	H.mu.Lock()
 	defer H.mu.Unlock()
+
 	// 一致性hash节点添加
 	t := &pb.ServiceNode{}
 	err := proto.Unmarshal([]byte(value), t)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("set service", t.String())
 	H.consistentHash.AddNode(consistent.Node{
 		Name:   t.GetName(),
 		Addr:   t.GetAddr(),
 		Weight: t.GetWeight(),
 	})
 	// PeerGetter 添加
-	H.getters[key] = NewHTTPGetter(t.GetName(), t.GetAddr())
+	H.getters[t.GetName()] = NewHTTPGetter(t.GetName(), t.GetAddr())
 }
 
 func (H *HTTPPool) DelService(key string) {
@@ -281,11 +302,14 @@ func (H HTTPGetter) Name() string {
 }
 
 func (H HTTPGetter) Get(group string, key string) ([]byte, error) {
-	u, err := url.JoinPath(H.baseURl, url.QueryEscape(group), url.QueryEscape(key))
+	data, err := proto.Marshal(&pb.GetRequest{
+		Group: group,
+		Key:   key,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to splicing url, err: %v", err)
+		return nil, err
 	}
-	resp, err := utls.Get(u)
+	resp, err := utls.Get(H.baseURl, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request, err: %v", err)
 	}

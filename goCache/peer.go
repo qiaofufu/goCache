@@ -31,4 +31,5 @@ type Discovery interface {
 
 type Register interface {
 	Register(prefix string, leaseExpire int64) // 注册服务
+	ListenLeaseResp()                          //
 }

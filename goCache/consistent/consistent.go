@@ -76,6 +76,9 @@ func (c *Consistent) AddNodes(nodes ...Node) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, node := range nodes {
+		if node.Weight == 0 {
+			node.Weight = 1
+		}
 		c.mp[node.Name] = node
 	}
 	c.adjust()
@@ -84,6 +87,9 @@ func (c *Consistent) AddNodes(nodes ...Node) {
 func (c *Consistent) AddNode(node Node) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if node.Weight == 0 {
+		node.Weight = 1
+	}
 	c.mp[node.Name] = node
 	c.adjust()
 }
@@ -98,6 +104,7 @@ func (c *Consistent) DelNode(name string) {
 func (c *Consistent) GetNode(key string) (Node, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
 	if len(key) == 0 {
 		return Node{}, fmt.Errorf("key cannot be nil")
 	}

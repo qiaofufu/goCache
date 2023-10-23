@@ -25,3 +25,8 @@ message SetRequest {
 message SetResponse {
   string msg = 1;
 }
+
+service Peer {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+}

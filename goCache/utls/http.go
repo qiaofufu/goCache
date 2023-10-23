@@ -9,11 +9,13 @@ import (
 
 /* HTTP 请求封装 */
 
-func Get(url string) (*http.Response, error) {
-	return Request(http.MethodGet, url, nil)
+func Get(url string, body []byte) (*http.Response, error) {
+	reader := bytes.NewReader(body)
+	return Request(http.MethodGet, url, reader)
 }
 
 func Delete(url string) (*http.Response, error) {
+
 	return Request(http.MethodDelete, url, nil)
 }
 

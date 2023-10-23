@@ -39,7 +39,6 @@ var (
 func GetGroup(group string) (*Group, bool) {
 	mu.RLock()
 	defer mu.RUnlock()
-
 	if g, ok := groups[group]; ok {
 		return g, true
 	}
@@ -49,7 +48,6 @@ func GetGroup(group string) (*Group, bool) {
 func NewGroup(name string, getter Getter, options ...CacheOptionFunc) *Group {
 	mu.Lock()
 	defer mu.Unlock()
-
 	cache := &Group{
 		name:        name,
 		getter:      getter,
@@ -64,10 +62,8 @@ func NewGroup(name string, getter Getter, options ...CacheOptionFunc) *Group {
 
 func (c *Group) Get(key string) (ByteView, error) {
 	if v, exist := c.lookupCache(key); exist {
-		log.Println("lookup cache success, key:", key)
 		return v, nil
 	}
-	log.Println("lookup cache fail, key:", key)
 	return c.load(key)
 }
 
@@ -126,6 +122,7 @@ func (c *Group) load(key string) (ByteView, error) {
 }
 
 func (c *Group) loadLocally(key string) (ByteView, error) {
+	log.Println("load locally")
 	v, err := c.getter.Get(key)
 	if err != nil {
 		return ByteView{}, err
@@ -135,6 +132,7 @@ func (c *Group) loadLocally(key string) (ByteView, error) {
 }
 
 func (c *Group) loadFromPeer(key string, peer PeerGetter) (ByteView, error) {
+	log.Println("load peer, ", peer.Name())
 	data, err := peer.Get(c.name, key)
 	if err != nil {
 		return ByteView{}, err
