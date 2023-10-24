@@ -22,8 +22,10 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PeerClient interface {
+	Hello(ctx context.Context, in *HelloRequest, opts ...grpc.CallOption) (*HelloResponse, error)
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	Set(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error)
+	Del(ctx context.Context, in *DelRequest, opts ...grpc.CallOption) (*DelResponse, error)
 }
 
 type peerClient struct {
@@ -32,6 +34,15 @@ type peerClient struct {
 
 func NewPeerClient(cc grpc.ClientConnInterface) PeerClient {
 	return &peerClient{cc}
+}
+
+func (c *peerClient) Hello(ctx context.Context, in *HelloRequest, opts ...grpc.CallOption) (*HelloResponse, error) {
+	out := new(HelloResponse)
+	err := c.cc.Invoke(ctx, "/proto.Peer/Hello", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *peerClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error) {
@@ -52,12 +63,23 @@ func (c *peerClient) Set(ctx context.Context, in *SetRequest, opts ...grpc.CallO
 	return out, nil
 }
 
+func (c *peerClient) Del(ctx context.Context, in *DelRequest, opts ...grpc.CallOption) (*DelResponse, error) {
+	out := new(DelResponse)
+	err := c.cc.Invoke(ctx, "/proto.Peer/Del", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PeerServer is the server API for Peer service.
 // All implementations must embed UnimplementedPeerServer
 // for forward compatibility
 type PeerServer interface {
+	Hello(context.Context, *HelloRequest) (*HelloResponse, error)
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	Set(context.Context, *SetRequest) (*SetResponse, error)
+	Del(context.Context, *DelRequest) (*DelResponse, error)
 	mustEmbedUnimplementedPeerServer()
 }
 
@@ -65,11 +87,17 @@ type PeerServer interface {
 type UnimplementedPeerServer struct {
 }
 
+func (UnimplementedPeerServer) Hello(context.Context, *HelloRequest) (*HelloResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Hello not implemented")
+}
 func (UnimplementedPeerServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
 func (UnimplementedPeerServer) Set(context.Context, *SetRequest) (*SetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Set not implemented")
+}
+func (UnimplementedPeerServer) Del(context.Context, *DelRequest) (*DelResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Del not implemented")
 }
 func (UnimplementedPeerServer) mustEmbedUnimplementedPeerServer() {}
 
@@ -82,6 +110,24 @@ type UnsafePeerServer interface {
 
 func RegisterPeerServer(s grpc.ServiceRegistrar, srv PeerServer) {
 	s.RegisterService(&Peer_ServiceDesc, srv)
+}
+
+func _Peer_Hello_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HelloRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PeerServer).Hello(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Peer/Hello",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PeerServer).Hello(ctx, req.(*HelloRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Peer_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -120,6 +166,24 @@ func _Peer_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Peer_Del_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PeerServer).Del(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Peer/Del",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PeerServer).Del(ctx, req.(*DelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Peer_ServiceDesc is the grpc.ServiceDesc for Peer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -128,12 +192,20 @@ var Peer_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*PeerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "Hello",
+			Handler:    _Peer_Hello_Handler,
+		},
+		{
 			MethodName: "Get",
 			Handler:    _Peer_Get_Handler,
 		},
 		{
 			MethodName: "Set",
 			Handler:    _Peer_Set_Handler,
+		},
+		{
+			MethodName: "Del",
+			Handler:    _Peer_Del_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

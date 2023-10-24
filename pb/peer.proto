@@ -26,7 +26,27 @@ message SetResponse {
   string msg = 1;
 }
 
+message DelRequest {
+  string group = 1;
+  string key = 2;
+}
+
+message DelResponse {
+  string group = 1;
+  string key = 2;
+}
+
+message HelloRequest {
+
+}
+
+message HelloResponse {
+
+}
+
 service Peer {
+  rpc Hello(HelloRequest) returns(HelloResponse) ;
   rpc Get(GetRequest) returns (GetResponse);
   rpc Set(SetRequest) returns (SetResponse);
+  rpc Del(DelRequest) returns (DelResponse);
 }

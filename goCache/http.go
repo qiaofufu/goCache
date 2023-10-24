@@ -23,7 +23,7 @@ const (
 )
 
 func NewHTTPPool(addr string, endpoints ...string) *HTTPPool {
-	client, err := clientv3.New(clientv3.Config{
+	cli1, err := clientv3.New(clientv3.Config{
 		Endpoints: endpoints,
 	})
 	if err != nil {
@@ -38,7 +38,7 @@ func NewHTTPPool(addr string, endpoints ...string) *HTTPPool {
 	return &HTTPPool{
 		self:           addr,
 		weight:         1,
-		registerCli:    client,
+		registerCli:    cli1,
 		discoveryCli:   cli2,
 		consistentHash: consistent.New(0, nil),
 		getters:        make(map[string]PeerGetter),
@@ -114,7 +114,6 @@ func (H *HTTPPool) Register(prefix string, leaseExpire int64) {
 
 func (H *HTTPPool) ListenLeaseResp() {
 	for _ = range H.leaseRespChan {
-
 		//log.Println("租约续租成功", resp)
 	}
 	log.Println("关闭租约")
@@ -159,7 +158,6 @@ func (H *HTTPPool) SetService(key string, value string) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("set service", t.String())
 	H.consistentHash.AddNode(consistent.Node{
 		Name:   t.GetName(),
 		Addr:   t.GetAddr(),

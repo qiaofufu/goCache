@@ -21,7 +21,7 @@ var (
 func main() {
 	flag.Parse()
 	ch := make(chan syscall.Signal)
-	peer := goCache.NewHTTPPool(*addr, etcdAddr)
+	peer := goCache.NewGrpcPeer(*addr, etcdAddr)
 	peer.StartService()
 
 	group := goCache.NewGroup("score", goCache.GetterFunc(func(key string) ([]byte, error) {
