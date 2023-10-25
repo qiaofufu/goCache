@@ -16,6 +16,10 @@ type LRU struct {
 	mu        sync.Mutex
 }
 
+type LRUEntry struct {
+	entry
+}
+
 func NewLRU(maxBytes int64, evictedFunc OnEvictedFunc) *LRU {
 	l := &LRU{
 		maxBytes:  maxBytes,
@@ -32,7 +36,7 @@ func (L *LRU) Get(key string) (value Value, ok bool) {
 	defer L.mu.Unlock()
 
 	if elem, ok := L.mp[key]; ok {
-		entry := elem.Value.(entry)
+		entry := elem.Value.(LRUEntry)
 		if entry.expire != 0 && time.Now().UnixMilli() > entry.expire {
 			L.ll.Remove(elem)
 			delete(L.mp, entry.key)
@@ -46,10 +50,12 @@ func (L *LRU) Get(key string) (value Value, ok bool) {
 }
 
 func (L *LRU) Set(key string, value Value, expire time.Duration) {
-	newEntry := entry{
-		key:    key,
-		value:  value,
-		expire: time.Now().Add(expire).UnixMilli(),
+	newEntry := LRUEntry{
+		entry: entry{
+			key:    key,
+			value:  value,
+			expire: time.Now().Add(expire).UnixMilli(),
+		},
 	}
 
 	L.mu.Lock()
